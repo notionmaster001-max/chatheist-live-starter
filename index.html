@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChatHeist Live™ | Interactive OBS Minigame</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com">
+    // Auto-demo in standalone preview
+    window.addEventListener('load', () => { setTimeout(simulateHeist, 600); });
+  </script>
   <script>
     tailwind.config = {
       theme: {
@@ -22,13 +25,16 @@
         }
       }
     }
+  
+    // Auto-demo in standalone preview
+    window.addEventListener('load', () => { setTimeout(simulateHeist, 600); });
   </script>
   <!-- OFFLINE CSS FALLBACK -->
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: transparent;
+      background: #080811;
       overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       width: 100vw;
@@ -57,6 +63,17 @@
   </style>
 </head>
 <body class="w-full h-screen p-6 flex flex-col justify-end items-end select-none">
+<!-- TOP GUMROAD CONVERSION BANNER -->
+<div style="background: linear-gradient(90deg, #ff2a85 0%, #7928ca 50%, #00f0ff 100%); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; position: sticky; top: 0; z-index: 99999; box-shadow: 0 4px 20px rgba(0,0,0,0.6); flex-wrap: wrap;">
+  <div style="display: flex; align-items: center; gap: 10px; color: #ffffff; font-size: 12px; font-weight: 600;">
+    <span style="background: rgba(0,0,0,0.45); padding: 3px 8px; border-radius: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-family: monospace;">FREE STARTER EDITION</span>
+    <span>Starter minigame. Unlock Full Discord Webhook, Sound Pack, VIP Leaderboard & Custom Twitch IRC Bot!</span>
+  </div>
+  <a href="https://notionmaster001.gumroad.com/l/yqepns" target="_blank" rel="noopener noreferrer" style="background: #ffffff; color: #0a0a12; padding: 6px 14px; border-radius: 6px; font-weight: 800; text-decoration: none; font-size: 11px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: transform 0.15s ease;">
+    Unlock Full Suite ($27.99) →
+  </a>
+</div>
+
 
   <!-- CONFIG MODAL (Auto-hidden in OBS when ?channel=... is in URL) -->
   <div id="config-bar" class="fixed top-4 left-4 bg-slate-900 border border-slate-700 p-3 rounded-xl text-xs z-50 flex items-center gap-3">
@@ -68,7 +85,7 @@
   </div>
 
   <!-- HEIST WIDGET CONTAINER -->
-  <div id="heist-widget" class="hidden glass-card flex flex-col gap-3 transition-all duration-300">
+  <div id="heist-widget" class="glass-card flex flex-col gap-3 transition-all duration-300">
     
     <!-- HEADER -->
     <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
@@ -330,6 +347,9 @@
       if (cfg) cfg.style.display = 'none';
       connectTwitch(paramChan);
     }
+  
+    // Auto-demo in standalone preview
+    window.addEventListener('load', () => { setTimeout(simulateHeist, 600); });
   </script>
 </body>
 </html>
