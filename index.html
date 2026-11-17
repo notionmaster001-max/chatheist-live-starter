@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatHeist Live™ | Interactive OBS Minigame</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            vice: {
+              pink: '#ff2a85',
+              cyan: '#00f0ff',
+              gold: '#ffd700',
+              dark: '#080811',
+              panel: '#0f0f1f',
+              border: '#24243e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- OFFLINE CSS FALLBACK -->
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: flex-end;
+      padding: 24px;
+    }
+    @keyframes vaultShake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-4px) rotate(-1deg); }
+      40%, 80% { transform: translateX(4px) rotate(1deg); }
+    }
+    .shake { animation: vaultShake 0.4s ease-in-out infinite; }
+    .glass-card {
+      background: rgba(15, 15, 31, 0.94);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 42, 133, 0.4);
+      box-shadow: 0 0 30px rgba(255, 42, 133, 0.3);
+      border-radius: 16px;
+      padding: 20px;
+      width: 340px;
+    }
+  </style>
+</head>
+<body class="w-full h-screen p-6 flex flex-col justify-end items-end select-none">
+
+  <!-- CONFIG MODAL (Auto-hidden in OBS when ?channel=... is in URL) -->
+  <div id="config-bar" class="fixed top-4 left-4 bg-slate-900 border border-slate-700 p-3 rounded-xl text-xs z-50 flex items-center gap-3">
+    <span class="font-mono text-slate-400">TWITCH CHANNEL:</span>
+    <input type="text" id="input-channel" placeholder="e.g. shroud" class="bg-slate-950 border border-slate-600 px-2.5 py-1 rounded text-white font-mono focus:outline-none">
+    <button onclick="connectTwitch()" class="px-3 py-1 bg-cyan-400 hover:bg-cyan-300 text-black font-bold rounded">CONNECT</button>
+    <button onclick="simulateHeist()" class="px-3 py-1 bg-pink-500 hover:bg-pink-400 text-white font-bold rounded">TEST HEIST</button>
+    <button onclick="document.getElementById('config-bar').style.display='none'" class="text-slate-500 hover:text-white">✕</button>
+  </div>
+
+  <!-- HEIST WIDGET CONTAINER -->
+  <div id="heist-widget" class="hidden glass-card flex flex-col gap-3 transition-all duration-300">
+    
+    <!-- HEADER -->
+    <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">🏦</span>
+        <div>
+          <h2 class="text-xs font-black text-white uppercase tracking-wider font-mono">VICE BANK HEIST</h2>
+          <p class="text-[10px] text-cyan-400 font-mono">TYPE <span class="text-white font-bold">!join</span> IN CHAT</p>
+        </div>
+      </div>
+      <div id="heist-timer" class="text-base font-black font-mono text-pink-500">
+        30s
+      </div>
+    </div>
+
+    <!-- VAULT ICON / STATUS -->
+    <div class="flex items-center gap-3 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+      <div id="vault-graphic" class="text-3xl shake">🔒</div>
+      <div class="flex-1">
+        <div class="flex justify-between text-xs font-mono">
+          <span class="text-slate-400">CREW MEMBERS</span>
+          <span id="crew-count" class="text-amber-400 font-bold">0</span>
+        </div>
+        <div class="flex justify-between text-xs font-mono mt-0.5">
+          <span class="text-slate-400">POTENTIAL LOOT</span>
+          <span id="loot-pot" class="text-emerald-400 font-bold">$250,000</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CREW LIST TICKER (Clean truncation to prevent screen overflow) -->
+    <div id="crew-names" class="text-[11px] font-mono text-slate-300 truncate max-w-full">
+      Waiting for chat to join...
+    </div>
+
+    <!-- RESULT BANNER -->
+    <div id="heist-result" class="hidden text-center py-2 rounded-lg font-mono text-xs font-black"></div>
+  </div>
+
+  <!-- WEBSOCKET RECONNECTION & AUDIO SYNTH -->
+  <script>
+    let audioCtx = null;
+    let masterGain = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const compressor = audioCtx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-12, audioCtx.currentTime);
+        compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        masterGain.connect(compressor);
+        compressor.connect(audioCtx.destination);
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playAlarm() {
+      try {
+        initAudio();
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        for (let i = 0; i < 2; i++) {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(800, now + i * 0.2);
+          osc.frequency.exponentialRampToValueAtTime(1200, now + i * 0.2 + 0.15);
+          gain.gain.setValueAtTime(0.2, now + i * 0.2);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.2 + 0.18);
+          osc.connect(gain);
+          gain.connect(masterGain);
+          osc.start(now + i * 0.2);
+          osc.stop(now + i * 0.2 + 0.18);
+        }
+      } catch(e) {}
+    }
+
+    function playWinSound() {
+      try {
+        initAudio();
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        [523.25, 659.25, 783.99, 1046.50].forEach((f, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(f, now + idx * 0.08);
+          gain.gain.setValueAtTime(0.2, now + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.3);
+          osc.connect(gain);
+          gain.connect(masterGain);
+          osc.start(now + idx * 0.08);
+          osc.stop(now + idx * 0.08 + 0.3);
+        });
+      } catch(e) {}
+    }
+
+    // STATE & HEIST LOGIC
+    let heistActive = false;
+    let crew = [];
+    let heistTimer = null;
+    let timeLeft = 30;
+
+    function startHeist(initiator) {
+      if (heistActive) return;
+      heistActive = true;
+      crew = [initiator || "PlayerOne"];
+      timeLeft = 25;
+
+      const widget = document.getElementById('heist-widget');
+      const timerElem = document.getElementById('heist-timer');
+      const crewCount = document.getElementById('crew-count');
+      const crewNames = document.getElementById('crew-names');
+      const resultElem = document.getElementById('heist-result');
+      const vault = document.getElementById('vault-graphic');
+
+      widget.classList.remove('hidden');
+      resultElem.classList.add('hidden');
+      vault.innerText = '🔒';
+      vault.classList.add('shake');
+      crewCount.innerText = crew.length;
+      updateCrewText();
+      timerElem.innerText = timeLeft + 's';
+
+      playAlarm();
+
+      heistTimer = setInterval(() => {
+        timeLeft--;
+        timerElem.innerText = timeLeft + 's';
+
+        if (timeLeft <= 0) {
+          clearInterval(heistTimer);
+          resolveHeist();
+        }
+      }, 1000);
+    }
+
+    function updateCrewText() {
+      const crewNames = document.getElementById('crew-names');
+      if (crew.length <= 4) {
+        crewNames.innerText = "Crew: " + crew.join(', ');
+      } else {
+        crewNames.innerText = "Crew: " + crew.slice(0, 4).join(', ') + ` +${crew.length - 4} others`;
+      }
+    }
+
+    function resolveHeist() {
+      const isSuccess = Math.random() > 0.35; // 65% success rate
+      const resultElem = document.getElementById('heist-result');
+      const vault = document.getElementById('vault-graphic');
+      vault.classList.remove('shake');
+
+      resultElem.classList.remove('hidden');
+      if (isSuccess) {
+        vault.innerText = '💎';
+        playWinSound();
+        const safeCrewCount = Math.max(1, crew.length);
+        const payout = Math.round((250000 + crew.length * 25000) / safeCrewCount);
+        resultElem.className = "text-center py-2 rounded-lg font-mono text-xs font-black bg-emerald-950 text-emerald-400 border border-emerald-600";
+        resultElem.innerText = `HEIST SUCCESSFUL! Each crew cut: $${payout.toLocaleString()}`;
+      } else {
+        vault.innerText = '🚨';
+        resultElem.className = "text-center py-2 rounded-lg font-mono text-xs font-black bg-red-950 text-red-400 border border-red-600";
+        resultElem.innerText = "BUSTED! SWAT intercepted the getaway.";
+      }
+
+      setTimeout(() => {
+        document.getElementById('heist-widget').classList.add('hidden');
+        heistActive = false;
+        crew = [];
+      }, 6000);
+    }
+
+    function addCrewMember(user) {
+      if (!heistActive) return;
+      if (!crew.includes(user)) {
+        crew.push(user);
+        document.getElementById('crew-count').innerText = crew.length;
+        updateCrewText();
+        playAlarm();
+      }
+    }
+
+    function simulateHeist() {
+      startHeist('MockViewer1');
+      setTimeout(() => addCrewMember('CyberNinja_42'), 2000);
+      setTimeout(() => addCrewMember('ViceCityGamer'), 5000);
+      setTimeout(() => addCrewMember('RetroLover'), 9000);
+    }
+
+    // ROBUST TWITCH IRC WEBSOCKET CLIENT WITH AUTO-RECONNECT
+    let ws = null;
+    let activeChannel = '';
+    let reconnectTimeout = null;
+
+    function connectTwitch(channel) {
+      const chan = (channel || document.getElementById('input-channel').value).trim().toLowerCase();
+      if (!chan) return;
+      activeChannel = chan;
+
+      if (ws) {
+        try { ws.close(); } catch(e) {}
+      }
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+
+      ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+
+      ws.onopen = () => {
+        ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+        ws.send('PASS oauth:dummy');
+        ws.send(`NICK justinfan${Math.floor(Math.random() * 80000 + 1000)}`);
+        ws.send(`JOIN #${chan}`);
+        document.getElementById('config-bar').style.display = 'none';
+        console.log(`Connected to Twitch #${chan}`);
+      };
+
+      ws.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.startsWith('PING')) {
+          ws.send('PONG :tmi.twitch.tv');
+          return;
+        }
+
+        if (msg.includes('PRIVMSG')) {
+          const userMatch = msg.match(/:(\w+)!/);
+          const user = userMatch ? userMatch[1] : 'Viewer';
+          const parts = msg.split(`PRIVMSG #${chan} :`);
+          if (parts.length > 1) {
+            const text = parts[1].trim().toLowerCase();
+            if (text.startsWith('!heist')) {
+              startHeist(user);
+            } else if (text.startsWith('!join')) {
+              addCrewMember(user);
+            }
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        console.warn('Twitch WebSocket disconnected. Reconnecting in 3s...');
+        reconnectTimeout = setTimeout(() => connectTwitch(activeChannel), 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('Twitch WS error:', err);
+        try { ws.close(); } catch(e) {}
+      };
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramChan = urlParams.get('channel');
+    if (paramChan) {
+      const cfg = document.getElementById('config-bar');
+      if (cfg) cfg.style.display = 'none';
+      connectTwitch(paramChan);
+    }
+  </script>
+</body>
+</html>
